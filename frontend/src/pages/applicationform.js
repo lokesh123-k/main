@@ -54,46 +54,19 @@ const ApplicationForm = () => {
     resume: null,
   });
 
-  /* -------- File Validation -------- */
   const handleChange = (e) => {
     const { name, value, files } = e.target;
-
-    if (files && files[0]) {
-      const file = files[0];
-
-      // Max 4MB (mobile safe)
-      if (file.size > 4 * 1024 * 1024) {
-        alert("File must be less than 4MB.");
-        return;
-      }
-
-      // Allow only PDF or images
-      if (
-        file.type !== "application/pdf" &&
-        !file.type.startsWith("image/")
-      ) {
-        alert("Only PDF or image files allowed.");
-        return;
-      }
-    }
-
     setFormData({
       ...formData,
       [name]: files ? files[0] : value,
     });
   };
 
-  /* -------- Submit -------- */
   const handleSubmit = async (e) => {
     e.preventDefault();
 
     if (!experience) {
       alert("Select experience");
-      return;
-    }
-
-    if (!formData.certificate || !formData.resume) {
-      alert("Please upload both files");
       return;
     }
 
@@ -109,14 +82,8 @@ const ApplicationForm = () => {
       data.append("resume", formData.resume);
 
       await axios.post(
-        "https://main-ten-pied.vercel.app/api/applications",
-        data,
-        {
-          headers: {
-            "Content-Type": "multipart/form-data",
-          },
-          timeout: 60000, // 60 sec for mobile
-        }
+        `${process.env.REACT_APP_BACKEND_URL}/api/applications`,
+        data
       );
 
       setSubmitted(true);
@@ -124,8 +91,8 @@ const ApplicationForm = () => {
       setExperience("");
       setTimeout(() => setSubmitted(false), 3000);
     } catch (err) {
-      console.error("FULL ERROR:", err.response || err.message || err);
-      alert("❌ Submission failed. Please try again.");
+      alert("❌ Submission failed");
+      console.error(err);
     } finally {
       setLoading(false);
     }
@@ -148,7 +115,6 @@ const ApplicationForm = () => {
           required
           onChange={handleChange}
         />
-
         <input
           name="email"
           type="email"
@@ -156,7 +122,6 @@ const ApplicationForm = () => {
           required
           onChange={handleChange}
         />
-
         <input
           name="position"
           placeholder="Position"
@@ -172,15 +137,12 @@ const ApplicationForm = () => {
         <input
           type="file"
           name="certificate"
-          accept=".pdf,image/jpeg,image/png"
           required
           onChange={handleChange}
         />
-
         <input
           type="file"
           name="resume"
-          accept=".pdf,image/jpeg,image/png"
           required
           onChange={handleChange}
         />
