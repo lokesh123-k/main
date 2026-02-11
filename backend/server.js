@@ -2,8 +2,6 @@ const express = require("express");
 const mongoose = require("mongoose");
 const cors = require("cors");
 const multer = require("multer");
-const path = require("path");
-const fs = require("fs");
 const nodemailer = require("nodemailer");
 require("dotenv").config();
 
@@ -37,28 +35,14 @@ transporter.verify((err) => {
   else console.log("✅ Email server ready");
 });
 
-/* -------------------- MULTER -------------------- */
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    const uploadDir = path.join(__dirname, "uploads");
-    if (!fs.existsSync(uploadDir)) {
-      fs.mkdirSync(uploadDir, { recursive: true });
-    }
-    cb(null, uploadDir);
-  },
-  filename: (req, file, cb) => {
-    cb(null, Date.now() + "-" + file.originalname);
-  },
-});
-
-const upload = multer({ storage });
+/* -------------------- MULTER (MEMORY STORAGE FOR VERCEL) -------------------- */
+const upload = multer({ storage: multer.memoryStorage() });
 
 /* -------------------- HEALTH CHECK -------------------- */
 app.get("/", (req, res) => {
   res.send("🌐 Server is running");
 });
 
-/* -------------------- APPLICATION FORM -------------------- */
 /* -------------------- CONTACT FORM -------------------- */
 app.post("/api/contact", async (req, res) => {
   try {
@@ -71,7 +55,6 @@ app.post("/api/contact", async (req, res) => {
       });
     }
 
-    // Save to MongoDB
     await Contact.create({
       user_name,
       user_phone,
@@ -79,7 +62,6 @@ app.post("/api/contact", async (req, res) => {
       message,
     });
 
-    // 📧 Send email to ADMIN
     await transporter.sendMail({
       from: `"Website Contact" <${process.env.EMAIL_USER}>`,
       to: process.env.EMAIL_USER,
@@ -94,19 +76,20 @@ app.post("/api/contact", async (req, res) => {
       `,
     });
 
-    return res.status(200).json({
+    res.status(200).json({
       success: true,
       message: "Message sent successfully",
     });
   } catch (error) {
     console.error("❌ Contact Error:", error);
-    return res.status(500).json({
+    res.status(500).json({
       success: false,
       error: "Server error while sending message",
     });
   }
 });
 
+/* -------------------- APPLICATION FORM -------------------- */
 app.post(
   "/api/applications",
   upload.fields([
@@ -130,12 +113,12 @@ app.post(
         position,
         experience,
         certificate: {
-          data: fs.readFileSync(certificate.path),
+          data: certificate.buffer,
           contentType: certificate.mimetype,
           filename: certificate.originalname,
         },
         resume: {
-          data: fs.readFileSync(resume.path),
+          data: resume.buffer,
           contentType: resume.mimetype,
           filename: resume.originalname,
         },
@@ -143,7 +126,6 @@ app.post(
 
       await application.save();
 
-      /* 📧 EMAIL TO APPLICANT */
       await transporter.sendMail({
         from: `"CeiTCS Careers" <${process.env.EMAIL_USER}>`,
         to: email,
@@ -159,10 +141,8 @@ app.post(
         `,
       });
 
-      fs.unlinkSync(certificate.path);
-      fs.unlinkSync(resume.path);
-
       res.status(201).json({
+        success: true,
         message: "Application submitted and email sent",
       });
     } catch (err) {
@@ -172,8 +152,13 @@ app.post(
   }
 );
 
-/* -------------------- SERVER -------------------- */
+/* -------------------- SERVER (Vercel Compatible) -------------------- */
 const PORT = process.env.PORT || 5000;
-app.listen(PORT, () =>
-  console.log(`🚀 Server running on http://localhost:${PORT}`)
-);
+
+if (process.env.NODE_ENV !== "production") {
+  app.listen(PORT, () =>
+    console.log(`🚀 Server running on http://localhost:${PORT}`)
+  );
+}
+
+module.exports = app;
