@@ -12,8 +12,10 @@ const app = express();
 
 /* -------------------- MIDDLEWARE -------------------- */
 app.use(cors({ origin: "*" }));
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+
+// Increase body size limit (important for mobile uploads)
+app.use(express.json({ limit: "10mb" }));
+app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 
 /* -------------------- MONGODB -------------------- */
 mongoose
@@ -26,7 +28,7 @@ const transporter = nodemailer.createTransport({
   service: "gmail",
   auth: {
     user: process.env.EMAIL_USER,
-    pass: process.env.EMAIL_PASS, // Gmail App Password
+    pass: process.env.EMAIL_PASS,
   },
 });
 
@@ -35,8 +37,13 @@ transporter.verify((err) => {
   else console.log("✅ Email server ready");
 });
 
-/* -------------------- MULTER (MEMORY STORAGE FOR VERCEL) -------------------- */
-const upload = multer({ storage: multer.memoryStorage() });
+/* -------------------- MULTER (Memory + File Size Limit) -------------------- */
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 5 * 1024 * 1024, // 5MB per file
+  },
+});
 
 /* -------------------- HEALTH CHECK -------------------- */
 app.get("/", (req, res) => {
@@ -92,10 +99,21 @@ app.post("/api/contact", async (req, res) => {
 /* -------------------- APPLICATION FORM -------------------- */
 app.post(
   "/api/applications",
-  upload.fields([
-    { name: "certificate", maxCount: 1 },
-    { name: "resume", maxCount: 1 },
-  ]),
+  (req, res, next) => {
+    upload.fields([
+      { name: "certificate", maxCount: 1 },
+      { name: "resume", maxCount: 1 },
+    ])(req, res, function (err) {
+      if (err instanceof multer.MulterError) {
+        return res.status(400).json({
+          error: "File too large. Max size is 5MB per file.",
+        });
+      } else if (err) {
+        return res.status(500).json({ error: "File upload error" });
+      }
+      next();
+    });
+  },
   async (req, res) => {
     try {
       const { name, email, position, experience } = req.body;
@@ -143,11 +161,13 @@ app.post(
 
       res.status(201).json({
         success: true,
-        message: "Application submitted and email sent",
+        message: "Application submitted successfully",
       });
     } catch (err) {
       console.error("❌ Application error:", err);
-      res.status(500).json({ error: "Application submission failed" });
+      res.status(500).json({
+        error: "Application submission failed",
+      });
     }
   }
 );
