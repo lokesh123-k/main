@@ -10,29 +10,20 @@ const Application = require("./models/application");
 
 const app = express();
 
-/* ====================== CORS (MOBILE SAFE) ====================== */
-app.use(
-  cors({
-    origin: "*",
-    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization"],
-  })
-);
+/* -------------------- MIDDLEWARE -------------------- */
+app.use(cors({ origin: "*" }));
 
-// Important for mobile preflight
-app.options("*", cors());
-
-/* ====================== BODY PARSER ====================== */
+// Increase body size limit (important for mobile uploads)
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 
-/* ====================== MONGODB ====================== */
+/* -------------------- MONGODB -------------------- */
 mongoose
   .connect(process.env.MONGO_URI)
   .then(() => console.log("✅ MongoDB Atlas connected"))
   .catch((err) => console.error("❌ MongoDB error:", err));
 
-/* ====================== NODEMAILER ====================== */
+/* -------------------- NODEMAILER -------------------- */
 const transporter = nodemailer.createTransport({
   service: "gmail",
   auth: {
@@ -46,18 +37,20 @@ transporter.verify((err) => {
   else console.log("✅ Email server ready");
 });
 
-/* ====================== MULTER ====================== */
+/* -------------------- MULTER (Memory + File Size Limit) -------------------- */
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 5 * 1024 * 1024 },
+  limits: {
+    fileSize: 5 * 1024 * 1024, // 5MB per file
+  },
 });
 
-/* ====================== HEALTH CHECK ====================== */
+/* -------------------- HEALTH CHECK -------------------- */
 app.get("/", (req, res) => {
   res.send("🌐 Server is running");
 });
 
-/* ====================== CONTACT FORM ====================== */
+/* -------------------- CONTACT FORM -------------------- */
 app.post("/api/contact", async (req, res) => {
   try {
     const { user_name, user_phone, user_email, message } = req.body;
@@ -103,22 +96,30 @@ app.post("/api/contact", async (req, res) => {
   }
 });
 
-/* ====================== APPLICATION FORM ====================== */
+/* -------------------- APPLICATION FORM -------------------- */
 app.post(
   "/api/applications",
-  upload.fields([
-    { name: "certificate", maxCount: 1 },
-    { name: "resume", maxCount: 1 },
-  ]),
+  (req, res, next) => {
+    upload.fields([
+      { name: "certificate", maxCount: 1 },
+      { name: "resume", maxCount: 1 },
+    ])(req, res, function (err) {
+      if (err instanceof multer.MulterError) {
+        return res.status(400).json({
+          error: "File too large. Max size is 5MB per file.",
+        });
+      } else if (err) {
+        return res.status(500).json({ error: "File upload error" });
+      }
+      next();
+    });
+  },
   async (req, res) => {
     try {
       const { name, email, position, experience } = req.body;
 
       if (!req.files?.certificate || !req.files?.resume) {
-        return res.status(400).json({
-          success: false,
-          error: "Files missing",
-        });
+        return res.status(400).json({ error: "Files missing" });
       }
 
       const certificate = req.files.certificate[0];
@@ -153,6 +154,8 @@ app.post(
           <p><b>Position:</b> ${position}</p>
           <p><b>Experience:</b> ${experience}</p>
           <p>Our HR team will contact you soon.</p>
+          <br/>
+          <p>Regards,<br/>CeiTCS Team</p>
         `,
       });
 
@@ -163,14 +166,13 @@ app.post(
     } catch (err) {
       console.error("❌ Application error:", err);
       res.status(500).json({
-        success: false,
         error: "Application submission failed",
       });
     }
   }
 );
 
-/* ====================== VERCEL EXPORT ====================== */
+/* -------------------- SERVER (Vercel Compatible) -------------------- */
 const PORT = process.env.PORT || 5000;
 
 if (process.env.NODE_ENV !== "production") {
